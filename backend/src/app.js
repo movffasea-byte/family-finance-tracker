@@ -15,6 +15,16 @@ export function buildApp() {
 
   if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is required');
 
+  // Log the real error, but never send internals (hosts, IPs, stack details) to clients.
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error(error);
+    const status = error.statusCode ?? 500;
+    if (status >= 500) {
+      return reply.code(status).send({ error: 'Something went wrong on our side. Try again in a moment.' });
+    }
+    return reply.code(status).send({ error: error.message });
+  });
+
   app.register(cors, { origin: process.env.CORS_ORIGIN, credentials: true });
   app.register(cookie);
   app.register(jwt, {
