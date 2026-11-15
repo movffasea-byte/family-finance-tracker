@@ -1,4 +1,25 @@
+import { useId, useState } from 'react';
 import { monthName } from './format.js';
+
+// Password input with a Show/Hide toggle.
+export function PasswordField({ label, value, onChange, autoComplete, minLength, hint }) {
+  const id = useId();
+  const [show, setShow] = useState(false);
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <span className="pw">
+        <input id={id} type={show ? 'text' : 'password'} autoComplete={autoComplete} required
+          minLength={minLength} value={value} onChange={onChange} />
+        <button type="button" className="btn-quiet pw-toggle" aria-pressed={show}
+          aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow((s) => !s)}>
+          {show ? 'Hide' : 'Show'}
+        </button>
+      </span>
+      {hint && <span className="hint">{hint}</span>}
+    </div>
+  );
+}
 
 export const Loading = ({ label = 'Loading…' }) => (
   <p className="status" role="status">

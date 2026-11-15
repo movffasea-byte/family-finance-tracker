@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
+import { PasswordField } from '../components.jsx';
 
 export default function Register() {
   const { user, register } = useAuth();
@@ -42,12 +43,8 @@ export default function Register() {
           Email
           <input type="email" autoComplete="email" required value={form.email} onChange={set('email')} />
         </label>
-        <label>
-          Password
-          <input type="password" autoComplete="new-password" required minLength={8} value={form.password}
-            onChange={set('password')} />
-          <span className="hint">At least 8 characters.</span>
-        </label>
+        <PasswordField label="Password" autoComplete="new-password" minLength={8} value={form.password}
+          onChange={set('password')} hint="At least 8 characters." />
         {error && <p className="field-error" role="alert">{error}</p>}
         <button type="submit" className="btn" disabled={busy}>{busy ? 'Creating…' : 'Create household'}</button>
       </form>
