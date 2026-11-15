@@ -18,5 +18,8 @@ export async function sendResetEmail(to, link) {
       html: `<p>Use this link to choose a new password. It works once and expires in 30 minutes.</p><p><a href="${link}">Choose a new password</a></p><p>If you didn't ask for this, you can ignore this email.</p>`,
     }),
   });
-  if (!res.ok) throw new Error(`Resend responded with status ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Resend responded with status ${res.status}: ${detail.slice(0, 300)}`);
+  }
 }
