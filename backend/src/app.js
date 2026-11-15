@@ -17,8 +17,9 @@ export function buildApp() {
 
   // Log the real error, but never send internals (hosts, IPs, stack details) to clients.
   app.setErrorHandler((error, request, reply) => {
-    request.log.error(error);
     const status = error.statusCode ?? 500;
+    if (status >= 500) request.log.error(error);
+    else request.log.warn(error.message);
     if (status >= 500) {
       return reply.code(status).send({ error: 'Something went wrong on our side. Try again in a moment.' });
     }

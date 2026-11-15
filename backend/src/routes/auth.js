@@ -1,5 +1,11 @@
 import argon2 from 'argon2';
+import crypto from 'node:crypto';
 import { pool, query } from '../db.js';
+import { sendResetEmail } from '../email.js';
+
+const RESET_MINUTES = 30;
+const MAX_RESETS_PER_HOUR = 3;
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 const cookieOptions = {
   path: '/',
@@ -92,6 +98,99 @@ export default async function authRoutes(app) {
       if (!ok) return reply.code(401).send({ error: 'Invalid email or password' });
       issueToken(reply, user);
       return { user: { id: user.id, email: user.email, name: user.name } };
+    },
+  );
+
+  // Always answers the same way, so nobody can learn which emails have accounts.
+  app.post(
+    '/forgot-password',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['email'],
+          additionalProperties: false,
+          properties: { email: credentials.email },
+        },
+      },
+    },
+    async (request) => {
+      const generic = { ok: true };
+      const found = await query('select id, email from public.users where email = lower($1)', [
+        request.body.email,
+      ]);
+      const user = found.rows[0];
+      if (!user) return generic;
+
+      const recent = await query(
+        `select count(*)::int as n from public.password_resets
+          where user_id = $1 and created_at > now() - interval '1 hour'`,
+        [user.id],
+      );
+      if (recent.rows[0].n >= MAX_RESETS_PER_HOUR) return generic;
+
+      const token = crypto.randomBytes(32).toString('base64url');
+      await query(
+        `insert into public.password_resets (user_id, token_hash, expires_at)
+         values ($1, $2, now() + make_interval(mins => $3::int))`,
+        [user.id, hashToken(token), RESET_MINUTES],
+      );
+
+      const base = (process.env.APP_URL || process.env.CORS_ORIGIN || '').replace(/\/$/, '');
+      try {
+        await sendResetEmail(user.email, `${base}/reset-password?token=${token}`);
+      } catch (err) {
+        request.log.error(err, 'password reset email failed');
+      }
+      return generic;
+    },
+  );
+
+  app.post(
+    '/reset-password',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['token', 'password'],
+          additionalProperties: false,
+          properties: {
+            token: { type: 'string', minLength: 20, maxLength: 200 },
+            password: credentials.password,
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        const found = await client.query(
+          `select user_id from public.password_resets
+            where token_hash = $1 and used_at is null and expires_at > now()
+              for update`,
+          [hashToken(request.body.token)],
+        );
+        if (!found.rowCount) {
+          await client.query('rollback');
+          return reply.code(400).send({ error: 'This reset link is invalid or has expired. Request a new one.' });
+        }
+        const userId = found.rows[0].user_id;
+        const passwordHash = await argon2.hash(request.body.password);
+        await client.query('update public.users set password_hash = $2 where id = $1', [userId, passwordHash]);
+        await client.query(
+          'update public.password_resets set used_at = now() where user_id = $1 and used_at is null',
+          [userId],
+        );
+        await client.query('commit');
+        reply.clearCookie('token', { path: '/' });
+        return { ok: true };
+      } catch (err) {
+        await client.query('rollback').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
     },
   );
 
