@@ -25,7 +25,9 @@ Household money tracker (income, expenses, budgets, savings goals) for a family 
 - Admin-only routes add `requireAdmin` (`plugins/membership.js`) after `requireMember`: members get 403, non-members still get 404.
 - Migrations are applied to Finance DB by the owner, never by Claude.
 - Phase 2 (split rules and approval) is built: `lib/split.js` is a pure kobo-based function; proposing is open to members, approve/discard/rule edits are admin-only; approving takes the household lock and re-checks Ready to assign inside the transaction.
-- Phases 3 (guardrails) and 4 (real-money research) are not built yet.
+- Phase 3 (guardrails) is built: bills with monthly reserves (`lib/bills.js`), safe to spend, cover moves (`kind: 'cover'`), locked pockets (moves out become `pending` for 24 hours; only `done` moves count in `ledger.js`; admin confirms, anyone cancels), and goals are goal-kind pockets (`savings_goals` is kept as `savings_goals_legacy`). Opening moves do not touch Ready to assign.
+- Never call `reply.send` inside `withTransaction`: return `{ code, body }` and send after it commits, so clients never see a success before the data is committed.
+- Phase 4 (real-money research, a document only) is not started.
 
 ## Not built yet
 - Inviting members to a household, showing who created a transaction, clearing optional fields (description, deadline) once set, role limits (any member can currently edit and delete).
