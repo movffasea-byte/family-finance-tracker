@@ -11,6 +11,8 @@ import goalRoutes from './routes/goals.js';
 import summaryRoutes from './routes/summary.js';
 import pocketRoutes from './routes/pockets.js';
 import pocketMoveRoutes from './routes/pocketMoves.js';
+import splitRuleRoutes from './routes/splitRules.js';
+import allocationRoutes from './routes/allocations.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true });
@@ -54,6 +56,8 @@ export function buildApp() {
   app.register(summaryRoutes, { prefix: `${scoped}/summary` });
   app.register(pocketRoutes, { prefix: `${scoped}/pockets` });
   app.register(pocketMoveRoutes, { prefix: `${scoped}/pocket-moves` });
+  app.register(splitRuleRoutes, { prefix: `${scoped}/split-rules` });
+  app.register(allocationRoutes, { prefix: `${scoped}/allocations` });
 
   return app;
 }
