@@ -24,7 +24,8 @@ Household money tracker (income, expenses, budgets, savings goals) for a family 
 - Any write that touches more than one money row uses `withTransaction` (`backend/src/db.js`) plus `lockHousehold` (`lib/ledger.js`). Compare money in SQL as numeric, not as JS floats.
 - Admin-only routes add `requireAdmin` (`plugins/membership.js`) after `requireMember`: members get 403, non-members still get 404.
 - Migrations are applied to Finance DB by the owner, never by Claude.
-- Phases 2 (split rules and approval), 3 (guardrails) and 4 (real-money research) are not built yet.
+- Phase 2 (split rules and approval) is built: `lib/split.js` is a pure kobo-based function; proposing is open to members, approve/discard/rule edits are admin-only; approving takes the household lock and re-checks Ready to assign inside the transaction.
+- Phases 3 (guardrails) and 4 (real-money research) are not built yet.
 
 ## Not built yet
 - Inviting members to a household, showing who created a transaction, clearing optional fields (description, deadline) once set, role limits (any member can currently edit and delete).
