@@ -9,6 +9,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import SplitRules from './pages/SplitRules.jsx';
+import Bills from './pages/Bills.jsx';
 import Approvals from './pages/Approvals.jsx';
 import Pockets from './pages/Pockets.jsx';
 import PocketDetail from './pages/PocketDetail.jsx';
@@ -83,6 +84,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="pockets" element={<Pockets />} />
         <Route path="split-rules" element={<SplitRules />} />
+        <Route path="bills" element={<Bills />} />
         <Route path="approvals" element={<Approvals />} />
         <Route path="pockets/:id" element={<PocketDetail />} />
         <Route path="transactions" element={<Transactions />} />

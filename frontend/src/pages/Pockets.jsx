@@ -19,9 +19,16 @@ export default function Pockets() {
   const { household } = useAuth();
   const isAdmin = household.role === 'admin';
   const base = `/households/${household.id}`;
-  const { data, error, loading, reload } = useLoad(() => api(`${base}/pockets`), [household.id]);
+  const { data, error, loading, reload: reloadPockets } = useLoad(() => api(`${base}/pockets`), [household.id]);
+  const pendingLoad = useLoad(() => api(`${base}/pocket-moves?status=pending`), [household.id]);
+  const reload = () => {
+    reloadPockets();
+    pendingLoad.reload();
+  };
+  const [note, setNote] = useState('');
+  const [cover, setCover] = useState(null); // { id, from, amount }
 
-  const [newForm, setNewForm] = useState({ name: '', kind: 'bill', targetAmount: '' });
+  const [newForm, setNewForm] = useState({ name: '', kind: 'bill', targetAmount: '', deadline: '' });
   const [moveForm, setMoveForm] = useState({ from: '', to: '', amount: '', note: '' });
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,8 +36,10 @@ export default function Pockets() {
   const run = async (fn) => {
     setBusy(true);
     setFormError('');
+    setNote('');
     try {
-      await fn();
+      const result = await fn();
+      if (result?.message) setNote(result.message);
       reload();
     } catch (err) {
       setFormError(err.message);
@@ -48,16 +57,17 @@ export default function Pockets() {
           name: newForm.name.trim(),
           kind: newForm.kind,
           ...(newForm.targetAmount && { targetAmount: Number(newForm.targetAmount) }),
+          ...(newForm.kind === 'goal' && newForm.deadline && { deadline: newForm.deadline }),
         },
       });
-      setNewForm({ name: '', kind: newForm.kind, targetAmount: '' });
+      setNewForm({ name: '', kind: newForm.kind, targetAmount: '', deadline: '' });
     });
   };
 
   const move = (e) => {
     e.preventDefault();
     run(async () => {
-      await api(`${base}/pocket-moves`, {
+      const result = await api(`${base}/pocket-moves`, {
         method: 'POST',
         body: {
           fromPocketId: moveForm.from || null,
@@ -67,8 +77,26 @@ export default function Pockets() {
         },
       });
       setMoveForm({ from: '', to: '', amount: '', note: '' });
+      return result;
     });
   };
+
+  const coverUp = (e) => {
+    e.preventDefault();
+    run(async () => {
+      const result = await api(`${base}/pocket-moves`, {
+        method: 'POST',
+        body: { fromPocketId: cover.from || null, toPocketId: cover.id, amount: Number(cover.amount), kind: 'cover' },
+      });
+      setCover(null);
+      return result;
+    });
+  };
+
+  const toggleLock = (p) => run(() => api(`${base}/pockets/${p.id}`, { method: 'PATCH', body: { locked: !p.locked } }));
+  const decide = (id, action) => run(() => api(`${base}/pocket-moves/${id}/${action}`, { method: 'POST' }));
+  const readyAt = (iso) =>
+    new Date(iso).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
 
   const archive = (p) => {
     if (!window.confirm(`Archive the pocket "${p.name}"?`)) return;
@@ -101,7 +129,85 @@ export default function Pockets() {
 
           {formError && <p className="field-error" role="alert">{formError}</p>}
 
-          <p><Link to="/split-rules">Split rules</Link> · <Link to="/approvals">Approvals</Link></p>
+          {note && <p role="status">{note}</p>}
+          <p><Link to="/split-rules">Split rules</Link> · <Link to="/approvals">Approvals</Link> · <Link to="/bills">Bills</Link></p>
+
+          {data.pockets.some((p) => p.balance < 0) && (
+            <section aria-label="Overspent pockets">
+              <h2>Overspent</h2>
+              <p className="hint">These pockets are below zero. Cover each one from another pocket or Ready to assign.</p>
+              <ul className="rows">
+                {data.pockets.filter((p) => p.balance < 0).map((p) => (
+                  <li key={p.id} className="row">
+                    <div className="row-main">
+                      <span>{p.name}</span>
+                      <span className="neg">{money(p.balance)}</span>
+                    </div>
+                    {isAdmin && cover?.id !== p.id && (
+                      <button type="button" className="btn-small"
+                        onClick={() => setCover({ id: p.id, from: '', amount: String(-p.balance) })}>
+                        Cover {money(-p.balance)}
+                      </button>
+                    )}
+                    {isAdmin && cover?.id === p.id && (
+                      <form className="budget-form" onSubmit={coverUp}>
+                        <label>
+                          Cover from
+                          <select value={cover.from} onChange={(e) => setCover({ ...cover, from: e.target.value })}>
+                            <option value="">Ready to assign</option>
+                            {data.pockets.filter((o) => o.id !== p.id).map((o) => (
+                              <option key={o.id} value={o.id}>{o.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Amount (₦)
+                          <input type="number" inputMode="decimal" min="0.01" step="0.01" required value={cover.amount}
+                            onChange={(e) => setCover({ ...cover, amount: e.target.value })} />
+                        </label>
+                        <button type="submit" className="btn-small" disabled={busy}>Cover</button>
+                        <button type="button" className="btn-quiet" onClick={() => setCover(null)}>Cancel</button>
+                      </form>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {pendingLoad.data?.moves.length > 0 && (
+            <section aria-label="Waiting withdrawals">
+              <h2>Waiting withdrawals</h2>
+              <ul className="rows">
+                {pendingLoad.data.moves.map((m) => {
+                  const ready = new Date(m.availableAt) <= new Date();
+                  return (
+                    <li key={m.id} className="row">
+                      <div className="row-main">
+                        <span>
+                          {m.fromName} → {m.toName}
+                          <span className="sub">
+                            {ready ? 'Ready to confirm now' : `Ready to confirm ${readyAt(m.availableAt)}`}
+                          </span>
+                        </span>
+                        <span>{money(m.amount)}</span>
+                      </div>
+                      <div className="budget-form">
+                        {isAdmin && (
+                          <button type="button" className="btn-small" disabled={busy || !ready} onClick={() => decide(m.id, 'confirm')}>
+                            Confirm
+                          </button>
+                        )}
+                        <button type="button" className="btn-quiet" disabled={busy} onClick={() => decide(m.id, 'cancel')}>
+                          Cancel
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
 
           <section>
             <h2>Your pockets</h2>
@@ -121,6 +227,7 @@ export default function Pockets() {
                           <Link to={`/pockets/${p.id}`}>{p.name}</Link>
                           <span className="sub">
                             {kindLabel(p.kind)}
+                            {p.locked ? ' · Locked' : ''}
                             {p.targetAmount ? ` · target ${money(p.targetAmount)}` : ''}
                           </span>
                         </span>
@@ -132,10 +239,16 @@ export default function Pockets() {
                         </div>
                       )}
                       {isAdmin && (
-                        <button type="button" className="btn-quiet" disabled={busy} onClick={() => archive(p)}
-                          aria-label={`Archive ${p.name}`}>
-                          Archive
-                        </button>
+                        <>
+                          <button type="button" className="btn-quiet" disabled={busy} onClick={() => toggleLock(p)}
+                            aria-label={`${p.locked ? 'Unlock' : 'Lock'} ${p.name}`}>
+                            {p.locked ? 'Unlock' : 'Lock'}
+                          </button>
+                          <button type="button" className="btn-quiet" disabled={busy} onClick={() => archive(p)}
+                            aria-label={`Archive ${p.name}`}>
+                            Archive
+                          </button>
+                        </>
                       )}
                     </li>
                   );
@@ -154,6 +267,11 @@ export default function Pockets() {
                     {pocketOptions}
                   </select>
                 </label>
+                {data.pockets.find((p) => p.id === moveForm.from)?.locked && (
+                  <p className="hint">
+                    This pocket is locked. Money moved out waits 24 hours before you can confirm it.
+                  </p>
+                )}
                 <label>
                   To
                   <select value={moveForm.to} onChange={(e) => setMoveForm({ ...moveForm, to: e.target.value })}>
@@ -188,6 +306,13 @@ export default function Pockets() {
                     ))}
                   </select>
                 </label>
+                {newForm.kind === 'goal' && (
+                  <label>
+                    Deadline (optional)
+                    <input type="date" value={newForm.deadline}
+                      onChange={(e) => setNewForm({ ...newForm, deadline: e.target.value })} />
+                  </label>
+                )}
                 <label>
                   Target (₦, optional)
                   <input type="number" inputMode="decimal" min="0.01" step="0.01" value={newForm.targetAmount}
