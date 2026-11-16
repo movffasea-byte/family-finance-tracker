@@ -10,7 +10,7 @@ const hashToken = (token) => crypto.createHash('sha256').update(token).digest('h
 const cookieOptions = {
   path: '/',
   httpOnly: true,
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  sameSite: 'lax',
   secure: process.env.NODE_ENV === 'production',
   maxAge: 60 * 60 * 24 * 7,
 };
