@@ -1,17 +1,32 @@
-import { Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
+import { api } from './api.js';
 import { Loading } from './components.jsx';
+import { useLoad } from './hooks.js';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import SplitRules from './pages/SplitRules.jsx';
+import Approvals from './pages/Approvals.jsx';
 import Pockets from './pages/Pockets.jsx';
 import PocketDetail from './pages/PocketDetail.jsx';
 import Transactions from './pages/Transactions.jsx';
 import Budgets from './pages/Budgets.jsx';
 import Goals from './pages/Goals.jsx';
 import Members from './pages/Members.jsx';
+
+// Nav link to Approvals with a count of splits waiting. Refreshes when the page changes.
+function ApprovalsLink({ householdId }) {
+  const { pathname } = useLocation();
+  const { data } = useLoad(
+    () => (householdId ? api(`/households/${householdId}/allocations?status=proposed`) : Promise.resolve(null)),
+    [householdId, pathname],
+  );
+  const n = data?.allocations.length ?? 0;
+  return <NavLink to="/approvals">Approvals{n > 0 ? ` (${n})` : ''}</NavLink>;
+}
 
 function Shell() {
   const { user, household, households, switchHousehold, loading, logout } = useAuth();
@@ -27,6 +42,7 @@ function Shell() {
         </NavLink>
         <NavLink to="/pockets">Pockets</NavLink>
         <NavLink to="/transactions">Transactions</NavLink>
+        <ApprovalsLink householdId={household?.id} />
         <NavLink to="/budgets">Budgets</NavLink>
         <NavLink to="/goals">Goals</NavLink>
         <NavLink to="/members">Members</NavLink>
@@ -66,6 +82,8 @@ export default function App() {
       <Route element={<Shell />}>
         <Route index element={<Dashboard />} />
         <Route path="pockets" element={<Pockets />} />
+        <Route path="split-rules" element={<SplitRules />} />
+        <Route path="approvals" element={<Approvals />} />
         <Route path="pockets/:id" element={<PocketDetail />} />
         <Route path="transactions" element={<Transactions />} />
         <Route path="budgets" element={<Budgets />} />

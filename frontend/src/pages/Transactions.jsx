@@ -5,6 +5,7 @@ import { useAuth } from '../auth.jsx';
 import { Empty, ErrorNote, Loading } from '../components.jsx';
 import { useLoad } from '../hooks.js';
 import { money, shortDate } from '../format.js';
+import SplitSheet from '../SplitSheet.jsx';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const blank = () => ({ type: 'expense', amount: '', categoryId: '', pocketId: '', description: '', occurredOn: today() });
@@ -16,6 +17,7 @@ export default function Transactions() {
   const [form, setForm] = useState(blank);
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [splitFor, setSplitFor] = useState(null);
 
   const cats = useLoad(() => api(`${base}/categories`), [household.id]);
   const txs = useLoad(
@@ -32,7 +34,7 @@ export default function Transactions() {
     setBusy(true);
     setFormError('');
     try {
-      await api(`${base}/transactions`, {
+      const created = await api(`${base}/transactions`, {
         method: 'POST',
         body: {
           type: form.type,
@@ -44,6 +46,7 @@ export default function Transactions() {
         },
       });
       setForm({ ...blank(), type: form.type });
+      if (form.type === 'income') setSplitFor({ id: created.transaction.id, amount: created.transaction.amount });
       txs.reload();
     } catch (err) {
       setFormError(err.message);
@@ -116,6 +119,8 @@ export default function Transactions() {
           {busy ? 'Saving…' : `Add ${form.type}`}
         </button>
       </form>
+
+      {splitFor && <SplitSheet income={splitFor} onDone={() => setSplitFor(null)} />}
 
       <div className="seg seg-filter" role="group" aria-label="Filter">
         {[['', 'All'], ['expense', 'Expenses'], ['income', 'Income']].map(([v, label]) => (

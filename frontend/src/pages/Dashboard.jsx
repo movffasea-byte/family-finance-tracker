@@ -14,6 +14,12 @@ export default function Dashboard() {
     [household.id, period.month, period.year],
   );
 
+  const waiting = useLoad(
+    () => (household.role === 'admin' ? api(`/households/${household.id}/allocations?status=proposed`) : Promise.resolve(null)),
+    [household.id],
+  );
+  const pending = waiting.data?.allocations.length ?? 0;
+
   const budgeted = data?.categories.filter((c) => c.budget != null) ?? [];
   const unbudgeted = data?.categories.filter((c) => c.budget == null && c.spent > 0) ?? [];
 
@@ -47,6 +53,12 @@ export default function Dashboard() {
               )}
             </p>
           </section>
+
+          {pending > 0 && (
+            <p>
+              <Link to="/approvals">{pending} {pending === 1 ? 'split is' : 'splits are'} waiting for approval →</Link>
+            </p>
+          )}
 
           <section>
             <h2>Budgets</h2>

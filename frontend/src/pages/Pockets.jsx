@@ -101,6 +101,8 @@ export default function Pockets() {
 
           {formError && <p className="field-error" role="alert">{formError}</p>}
 
+          <p><Link to="/split-rules">Split rules</Link> · <Link to="/approvals">Approvals</Link></p>
+
           <section>
             <h2>Your pockets</h2>
             {data.pockets.length === 0 ? (
