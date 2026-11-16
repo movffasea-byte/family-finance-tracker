@@ -1,4 +1,5 @@
 import { query } from '../db.js';
+import { readyToAssign } from '../lib/ledger.js';
 import { requireMember, householdParams } from '../plugins/membership.js';
 
 export default async function summaryRoutes(app) {
@@ -55,7 +56,15 @@ export default async function summaryRoutes(app) {
       );
 
       const { income, expense } = totals.rows[0];
-      return { month, year, income, expense, balance: income - expense, categories: categories.rows };
+      return {
+        month,
+        year,
+        income,
+        expense,
+        balance: income - expense,
+        readyToAssign: await readyToAssign({ query }, householdId),
+        categories: categories.rows,
+      };
     },
   );
 }

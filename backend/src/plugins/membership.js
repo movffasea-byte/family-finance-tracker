@@ -11,6 +11,11 @@ export async function requireMember(request, reply) {
   request.role = rows[0].role;
 }
 
+// preHandler used after requireMember for admin-only routes.
+export async function requireAdmin(request, reply) {
+  if (request.role !== 'admin') return reply.code(403).send({ error: 'Only admins can do this' });
+}
+
 export const uuid = { type: 'string', format: 'uuid' };
 export const householdParams = {
   type: 'object',

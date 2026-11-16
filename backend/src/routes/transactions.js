@@ -5,12 +5,14 @@ const fields = {
   type: { type: 'string', enum: ['income', 'expense'] },
   amount: { type: 'number', exclusiveMinimum: 0 },
   categoryId: uuid,
+  pocketId: { type: ['string', 'null'], format: 'uuid' },
   description: { type: 'string', maxLength: 300 },
   occurredOn: { type: 'string', format: 'date' },
 };
 
 const cols = `id, category_id as "categoryId", created_by as "createdBy",
   (select name from public.users u where u.id = created_by) as "createdByName", type,
+  pocket_id as "pocketId", (select name from public.pockets p where p.id = pocket_id) as "pocketName",
   amount::float8 as amount, description, occurred_on::text as "occurredOn"`;
 
 export default async function transactionRoutes(app) {
@@ -26,6 +28,18 @@ export default async function transactionRoutes(app) {
     );
     return rowCount > 0;
   };
+
+  // The pocket, if given, must be an active pocket in the same household.
+  const pocketOk = async (householdId, pocketId) => {
+    if (!pocketId) return true;
+    const { rowCount } = await query(
+      'select 1 from public.pockets where id = $1 and household_id = $2 and archived_at is null',
+      [pocketId, householdId],
+    );
+    return rowCount > 0;
+  };
+  const badPocket = { error: 'That pocket was not found or is archived. Pick another pocket.' };
+  const incomeNoPocket = { error: 'Income goes to Ready to assign first. Remove the pocket, then give the money a job on the Pockets page.' };
 
   app.get(
     '/',
@@ -80,12 +94,14 @@ export default async function transactionRoutes(app) {
       const b = request.body;
       if (!(await categoryOk(householdId, b.categoryId)))
         return reply.code(400).send({ error: 'Unknown category' });
+      if (b.type === 'income' && b.pocketId) return reply.code(400).send(incomeNoPocket);
+      if (!(await pocketOk(householdId, b.pocketId))) return reply.code(400).send(badPocket);
       const { rows } = await query(
         `insert into public.transactions
-           (household_id, category_id, created_by, type, amount, description, occurred_on)
-         values ($1, $2, $3, $4, $5, $6, coalesce($7::date, current_date))
+           (household_id, category_id, created_by, type, amount, description, occurred_on, pocket_id)
+         values ($1, $2, $3, $4, $5, $6, coalesce($7::date, current_date), $8)
          returning ${cols}`,
-        [householdId, b.categoryId ?? null, request.user.sub, b.type, b.amount, b.description ?? null, b.occurredOn ?? null],
+        [householdId, b.categoryId ?? null, request.user.sub, b.type, b.amount, b.description ?? null, b.occurredOn ?? null, b.pocketId ?? null],
       );
       return reply.code(201).send({ transaction: rows[0] });
     },
@@ -104,16 +120,27 @@ export default async function transactionRoutes(app) {
       const b = request.body;
       if (!(await categoryOk(householdId, b.categoryId)))
         return reply.code(400).send({ error: 'Unknown category' });
+      const existing = await query(
+        'select type, pocket_id from public.transactions where id = $2 and household_id = $1',
+        [householdId, id],
+      );
+      if (!existing.rowCount) return reply.code(404).send({ error: 'Transaction not found' });
+      const setPocket = 'pocketId' in b;
+      const newType = b.type ?? existing.rows[0].type;
+      const newPocket = setPocket ? b.pocketId : existing.rows[0].pocket_id;
+      if (newType === 'income' && newPocket) return reply.code(400).send(incomeNoPocket);
+      if (setPocket && !(await pocketOk(householdId, b.pocketId))) return reply.code(400).send(badPocket);
       const { rows } = await query(
         `update public.transactions set
            type = coalesce($3, type),
            amount = coalesce($4, amount),
            category_id = coalesce($5, category_id),
            description = coalesce($6, description),
-           occurred_on = coalesce($7::date, occurred_on)
+           occurred_on = coalesce($7::date, occurred_on),
+           pocket_id = case when $8::boolean then $9::uuid else pocket_id end
          where id = $2 and household_id = $1
          returning ${cols}`,
-        [householdId, id, b.type ?? null, b.amount ?? null, b.categoryId ?? null, b.description ?? null, b.occurredOn ?? null],
+        [householdId, id, b.type ?? null, b.amount ?? null, b.categoryId ?? null, b.description ?? null, b.occurredOn ?? null, setPocket, b.pocketId ?? null],
       );
       if (!rows.length) return reply.code(404).send({ error: 'Transaction not found' });
       return { transaction: rows[0] };
