@@ -7,6 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 dotenv.config({ path: path.join(root, '.env.test'), override: true });
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET ||= 'test-secret-not-for-production';
+process.env.CORS_ORIGIN ||= 'http://localhost:5173';
 
 // Tests wipe and rebuild the public schema, so refuse anything but a local *_test database.
 const url = process.env.DATABASE_URL ?? '';
