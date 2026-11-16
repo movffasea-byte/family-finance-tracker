@@ -67,7 +67,7 @@ export default async function splitRuleRoutes(app) {
       if (rules.some((r) => Math.round(r.value * 100) / 100 !== r.value))
         return reply.code(400).send({ error: 'Use at most two decimal places for each value.' });
 
-      return withTransaction(async (client) => {
+      const out = await withTransaction(async (client) => {
         await lockHousehold(client, householdId);
         if (ids.length) {
           const { rowCount } = await client.query(
@@ -75,7 +75,7 @@ export default async function splitRuleRoutes(app) {
             [householdId, ids],
           );
           if (rowCount !== ids.length)
-            return reply.code(400).send({ error: 'One of those pockets was not found or is archived.' });
+            return { code: 400, body: { error: 'One of those pockets was not found or is archived.' } };
         }
         await client.query('delete from public.split_rules where household_id = $1', [householdId]);
         for (const [i, r] of rules.entries()) {
@@ -85,8 +85,9 @@ export default async function splitRuleRoutes(app) {
             [householdId, r.pocketId, r.method, r.value, i + 1],
           );
         }
-        return { rules: await loadRules(client, householdId) };
+        return { body: { rules: await loadRules(client, householdId) } };
       });
+      return reply.code(out.code ?? 200).send(out.body);
     },
   );
 }

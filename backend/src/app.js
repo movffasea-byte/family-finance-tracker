@@ -7,7 +7,7 @@ import householdRoutes from './routes/households.js';
 import categoryRoutes from './routes/categories.js';
 import transactionRoutes from './routes/transactions.js';
 import budgetRoutes from './routes/budgets.js';
-import goalRoutes from './routes/goals.js';
+import billRoutes from './routes/bills.js';
 import summaryRoutes from './routes/summary.js';
 import pocketRoutes from './routes/pockets.js';
 import pocketMoveRoutes from './routes/pocketMoves.js';
@@ -52,7 +52,7 @@ export function buildApp() {
   app.register(categoryRoutes, { prefix: `${scoped}/categories` });
   app.register(transactionRoutes, { prefix: `${scoped}/transactions` });
   app.register(budgetRoutes, { prefix: `${scoped}/budgets` });
-  app.register(goalRoutes, { prefix: `${scoped}/goals` });
+  app.register(billRoutes, { prefix: `${scoped}/bills` });
   app.register(summaryRoutes, { prefix: `${scoped}/summary` });
   app.register(pocketRoutes, { prefix: `${scoped}/pockets` });
   app.register(pocketMoveRoutes, { prefix: `${scoped}/pocket-moves` });

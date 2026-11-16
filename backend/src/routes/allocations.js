@@ -3,6 +3,7 @@ import { requireMember, requireAdmin, householdParams, itemParams, uuid } from '
 import { readyToAssign, hasFunds, lockHousehold } from '../lib/ledger.js';
 import { proposeSplit } from '../lib/split.js';
 import { loadRules } from './splitRules.js';
+import { monthlyReserve } from '../lib/bills.js';
 
 const naira = (n) => `₦${Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
 
@@ -42,10 +43,33 @@ export default async function allocationRoutes(app) {
     async (request) => {
       const { householdId } = request.params;
       const rules = await loadRules({ query }, householdId);
-      const split = proposeSplit(request.body.amount, rules);
-      const names = Object.fromEntries(rules.map((r) => [r.pocketId, r.pocketName]));
+
+      // Bill pockets that no rule covers get a suggested fixed line: the monthly reserve of their
+      // active bills. It is only a suggestion; the user still edits and approves.
+      const covered = new Set(rules.map((r) => r.pocketId));
+      const { rows: bills } = await query(
+        `select b.pocket_id as "pocketId", p.name as "pocketName", b.amount::float8 as amount,
+                b.frequency::text as frequency
+           from public.bills b join public.pockets p on p.id = b.pocket_id
+          where b.household_id = $1 and b.active and p.archived_at is null
+          order by b.created_at`,
+        [householdId],
+      );
+      const suggested = new Map();
+      for (const b of bills.filter((x) => !covered.has(x.pocketId))) {
+        const cur = suggested.get(b.pocketId) ?? { pocketName: b.pocketName, kobo: 0 };
+        cur.kobo += Math.round(monthlyReserve(b) * 100);
+        suggested.set(b.pocketId, cur);
+      }
+      const suggestedRules = [...suggested].map(([pocketId, v], i) => ({
+        pocketId, pocketName: v.pocketName, method: 'fixed', value: v.kobo / 100, priority: 1000 + i,
+      }));
+
+      const all = [...rules, ...suggestedRules];
+      const split = proposeSplit(request.body.amount, all);
+      const names = Object.fromEntries(all.map((r) => [r.pocketId, r.pocketName]));
       return {
-        lines: split.lines.map((l) => ({ ...l, pocketName: names[l.pocketId] })),
+        lines: split.lines.map((l) => ({ ...l, pocketName: names[l.pocketId], suggested: suggested.has(l.pocketId) })),
         unassigned: split.unassigned,
         readyToAssign: await readyToAssign({ query }, householdId),
       };
@@ -88,19 +112,19 @@ export default async function allocationRoutes(app) {
       if (lines.some((l) => Math.round(l.amount * 100) / 100 !== l.amount))
         return reply.code(400).send({ error: 'Use at most two decimal places for each amount.' });
 
-      return withTransaction(async (client) => {
+      const out = await withTransaction(async (client) => {
         const pockets = await client.query(
           'select 1 from public.pockets where household_id = $1 and archived_at is null and id = any($2::uuid[])',
           [householdId, ids],
         );
         if (pockets.rowCount !== ids.length)
-          return reply.code(400).send({ error: 'One of those pockets was not found or is archived.' });
+          return { code: 400, body: { error: 'One of those pockets was not found or is archived.' } };
         if (incomeTransactionId) {
           const tx = await client.query(
             "select 1 from public.transactions where id = $1 and household_id = $2 and type = 'income'",
             [incomeTransactionId, householdId],
           );
-          if (!tx.rowCount) return reply.code(400).send({ error: 'That income was not found.' });
+          if (!tx.rowCount) return { code: 400, body: { error: 'That income was not found.' } };
         }
         const { rows } = await client.query(
           `insert into public.allocations (household_id, income_transaction_id, created_by)
@@ -114,8 +138,9 @@ export default async function allocationRoutes(app) {
           );
         }
         const created = await client.query(`${allocationSelect} where a.id = $1`, [rows[0].id]);
-        return reply.code(201).send({ allocation: created.rows[0] });
+        return { code: 201, body: { allocation: created.rows[0] } };
       });
+      return reply.code(out.code ?? 200).send(out.body);
     },
   );
 
@@ -147,15 +172,15 @@ export default async function allocationRoutes(app) {
 
   app.post('/:id/approve', { preHandler: requireAdmin, schema: { params: itemParams } }, async (request, reply) => {
     const { householdId, id } = request.params;
-    return withTransaction(async (client) => {
+    const out = await withTransaction(async (client) => {
       await lockHousehold(client, householdId);
       const found = await client.query(
         'select status::text as status from public.allocations where id = $2 and household_id = $1 for update',
         [householdId, id],
       );
-      if (!found.rowCount) return reply.code(404).send({ error: 'Split not found' });
+      if (!found.rowCount) return { code: 404, body: { error: 'Split not found' } };
       if (found.rows[0].status !== 'proposed')
-        return reply.code(409).send({ error: `This split was already ${found.rows[0].status}.` });
+        return { code: 409, body: { error: `This split was already ${found.rows[0].status}.` } };
 
       const archived = await client.query(
         `select p.name from public.allocation_lines l join public.pockets p on p.id = l.pocket_id
@@ -163,7 +188,7 @@ export default async function allocationRoutes(app) {
         [id],
       );
       if (archived.rowCount)
-        return reply.code(400).send({ error: `${archived.rows[0].name} is archived. Discard this split and make a new one.` });
+        return { code: 400, body: { error: `${archived.rows[0].name} is archived. Discard this split and make a new one.` } };
 
       const { rows: sumRows } = await client.query(
         'select sum(amount)::text as total, sum(amount)::float8 as total_num from public.allocation_lines where allocation_id = $1',
@@ -172,9 +197,9 @@ export default async function allocationRoutes(app) {
       const funds = await hasFunds(client, householdId, null, sumRows[0].total);
       if (!funds.ok) {
         const short = sumRows[0].total_num - funds.balance;
-        return reply.code(400).send({
+        return { code: 400, body: {
           error: `Ready to assign only has ${naira(funds.balance)}, but this split needs ${naira(sumRows[0].total_num)}. You are short by ${naira(short)}.`,
-        });
+        } };
       }
 
       await client.query(
@@ -189,27 +214,29 @@ export default async function allocationRoutes(app) {
         [id, request.user.sub],
       );
       const done = await client.query(`${allocationSelect} where a.id = $1`, [id]);
-      return { allocation: done.rows[0], readyToAssign: await readyToAssign(client, householdId) };
+      return { body: { allocation: done.rows[0], readyToAssign: await readyToAssign(client, householdId) } };
     });
+    return reply.code(out.code ?? 200).send(out.body);
   });
 
   app.post('/:id/discard', { preHandler: requireAdmin, schema: { params: itemParams } }, async (request, reply) => {
     const { householdId, id } = request.params;
-    return withTransaction(async (client) => {
+    const out = await withTransaction(async (client) => {
       await lockHousehold(client, householdId);
       const found = await client.query(
         'select status::text as status from public.allocations where id = $2 and household_id = $1 for update',
         [householdId, id],
       );
-      if (!found.rowCount) return reply.code(404).send({ error: 'Split not found' });
+      if (!found.rowCount) return { code: 404, body: { error: 'Split not found' } };
       if (found.rows[0].status !== 'proposed')
-        return reply.code(409).send({ error: `This split was already ${found.rows[0].status}.` });
+        return { code: 409, body: { error: `This split was already ${found.rows[0].status}.` } };
       await client.query(
         "update public.allocations set status = 'discarded', decided_by = $2, decided_at = now() where id = $1",
         [id, request.user.sub],
       );
       const done = await client.query(`${allocationSelect} where a.id = $1`, [id]);
-      return { allocation: done.rows[0] };
+      return { body: { allocation: done.rows[0] } };
     });
+    return reply.code(out.code ?? 200).send(out.body);
   });
 }

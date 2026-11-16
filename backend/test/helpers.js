@@ -20,10 +20,14 @@ const { pool } = await import('../src/db.js');
 export { pool };
 
 // Rebuilds the public schema from every migration, in order.
-export async function migrate() {
+// With { before: '2026...' }, stops before that migration file (to test a migration against data).
+const migrationsDir = path.join(root, '..', 'supabase', 'migrations');
+export const applyMigration = (file) => pool.query(readFileSync(path.join(migrationsDir, file), 'utf8'));
+
+export async function migrate({ before } = {}) {
   await pool.query('drop schema public cascade; create schema public;');
-  const dir = path.join(root, '..', 'supabase', 'migrations');
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+  const dir = migrationsDir;
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql') && (!before || f < before)).sort()) {
     await pool.query(readFileSync(path.join(dir, file), 'utf8'));
   }
 }

@@ -1,20 +1,26 @@
 // Pocket balances and Ready to assign are always computed from transactions and
 // pocket_moves. Nothing stores a balance. `db` is the pool or a transaction client.
 
+// Only 'done' moves count. Pending (waiting out a lock) and cancelled moves never do.
 const POCKET_BALANCE = `(
-    coalesce((select sum(m.amount) from public.pocket_moves m where m.to_pocket_id = p.id), 0)
-  - coalesce((select sum(m.amount) from public.pocket_moves m where m.from_pocket_id = p.id), 0)
+    coalesce((select sum(m.amount) from public.pocket_moves m
+               where m.to_pocket_id = p.id and m.status = 'done'), 0)
+  - coalesce((select sum(m.amount) from public.pocket_moves m
+               where m.from_pocket_id = p.id and m.status = 'done'), 0)
   - coalesce((select sum(t.amount) from public.transactions t
                where t.pocket_id = p.id and t.type = 'expense'), 0)
 )`;
 
+// Opening moves (goals brought over from the old savings goals) put money into a pocket
+// without taking it from Ready to assign, because that money never came in as income here.
 const READY_TO_ASSIGN = `(
     coalesce((select sum(t.amount) from public.transactions t
                where t.household_id = $1 and t.type = 'income'), 0)
   - coalesce((select sum(m.amount) from public.pocket_moves m
-               where m.household_id = $1 and m.from_pocket_id is null), 0)
+               where m.household_id = $1 and m.from_pocket_id is null
+                 and m.status = 'done' and m.kind <> 'opening'), 0)
   + coalesce((select sum(m.amount) from public.pocket_moves m
-               where m.household_id = $1 and m.to_pocket_id is null), 0)
+               where m.household_id = $1 and m.to_pocket_id is null and m.status = 'done'), 0)
   - coalesce((select sum(t.amount) from public.transactions t
                where t.household_id = $1 and t.type = 'expense' and t.pocket_id is null), 0)
 )`;
@@ -22,7 +28,8 @@ const READY_TO_ASSIGN = `(
 export async function pocketBalances(db, householdId) {
   const { rows } = await db.query(
     `select p.id, p.name, p.kind, p.target_amount::float8 as "targetAmount",
-            p.sort_order as "sortOrder", ${POCKET_BALANCE}::float8 as balance
+            p.sort_order as "sortOrder", p.locked, p.deadline::text as deadline,
+            ${POCKET_BALANCE}::float8 as balance
        from public.pockets p
       where p.household_id = $1 and p.archived_at is null
       order by p.sort_order, p.name`,
@@ -57,4 +64,15 @@ export async function hasFunds(db, householdId, pocketId, amount) {
 // Serialises money writes per household so two approvals or moves can't race.
 export async function lockHousehold(client, householdId) {
   await client.query('select pg_advisory_xact_lock(hashtext($1))', [householdId]);
+}
+
+// Sum of the spending pockets: what can be spent without touching bills or savings.
+export async function safeToSpend(db, householdId) {
+  const { rows } = await db.query(
+    `select coalesce(sum(${POCKET_BALANCE}), 0)::float8 as value
+       from public.pockets p
+      where p.household_id = $1 and p.archived_at is null and p.kind = 'spending'`,
+    [householdId],
+  );
+  return rows[0].value;
 }

@@ -1,5 +1,6 @@
 import { query } from '../db.js';
-import { readyToAssign } from '../lib/ledger.js';
+import { readyToAssign, safeToSpend, pocketBalances } from '../lib/ledger.js';
+import { lagosToday, daysLeftInMonth } from '../lib/bills.js';
 import { requireMember, householdParams } from '../plugins/membership.js';
 
 export default async function summaryRoutes(app) {
@@ -56,6 +57,11 @@ export default async function summaryRoutes(app) {
       );
 
       const { income, expense } = totals.rows[0];
+      const safe = await safeToSpend({ query }, householdId);
+      const daysLeft = daysLeftInMonth(lagosToday());
+      const overspent = (await pocketBalances({ query }, householdId))
+        .filter((p) => p.balance < 0)
+        .map(({ id, name, balance }) => ({ id, name, balance }));
       return {
         month,
         year,
@@ -63,6 +69,10 @@ export default async function summaryRoutes(app) {
         expense,
         balance: income - expense,
         readyToAssign: await readyToAssign({ query }, householdId),
+        safeToSpend: safe,
+        safePerDay: Math.max(0, Math.round((safe / daysLeft) * 100) / 100),
+        daysLeft,
+        overspent,
         categories: categories.rows,
       };
     },
