@@ -73,6 +73,7 @@ a { color: var(--indigo); }
 .balance-label { margin: 0; color: #c5cbe6; font-size: 0.9375rem; }
 .balance-figure { margin: 0.15rem 0 1rem; font-size: clamp(2.25rem, 9vw, 3.5rem); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; }
 .balance-figure.neg { color: #ffb4b4; }
+.balance-link { color: var(--marigold); font-weight: 600; }
 .balance-split { display: flex; gap: 2rem; margin: 0; }
 .balance-split dt { color: #c5cbe6; font-size: 0.875rem; }
 .balance-split dd { margin: 0; font-weight: 600; font-size: 1.0625rem; }

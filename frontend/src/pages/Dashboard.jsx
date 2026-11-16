@@ -37,6 +37,15 @@ export default function Dashboard() {
                 <dd>{money(data.expense)}</dd>
               </div>
             </dl>
+            <p className="balance-label">
+              Ready to assign: {money(data.readyToAssign)}
+              {data.readyToAssign > 0 && (
+                <>
+                  {' '}
+                  <Link to="/pockets" className="balance-link">Give it a job →</Link>
+                </>
+              )}
+            </p>
           </section>
 
           <section>

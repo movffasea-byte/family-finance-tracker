@@ -6,6 +6,8 @@ import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Pockets from './pages/Pockets.jsx';
+import PocketDetail from './pages/PocketDetail.jsx';
 import Transactions from './pages/Transactions.jsx';
 import Budgets from './pages/Budgets.jsx';
 import Goals from './pages/Goals.jsx';
@@ -23,6 +25,7 @@ function Shell() {
         <NavLink to="/" end>
           Home
         </NavLink>
+        <NavLink to="/pockets">Pockets</NavLink>
         <NavLink to="/transactions">Transactions</NavLink>
         <NavLink to="/budgets">Budgets</NavLink>
         <NavLink to="/goals">Goals</NavLink>
@@ -62,6 +65,8 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<Shell />}>
         <Route index element={<Dashboard />} />
+        <Route path="pockets" element={<Pockets />} />
+        <Route path="pockets/:id" element={<PocketDetail />} />
         <Route path="transactions" element={<Transactions />} />
         <Route path="budgets" element={<Budgets />} />
         <Route path="goals" element={<Goals />} />

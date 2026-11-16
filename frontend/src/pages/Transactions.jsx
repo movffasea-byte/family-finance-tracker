@@ -7,7 +7,7 @@ import { useLoad } from '../hooks.js';
 import { money, shortDate } from '../format.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
-const blank = () => ({ type: 'expense', amount: '', categoryId: '', description: '', occurredOn: today() });
+const blank = () => ({ type: 'expense', amount: '', categoryId: '', pocketId: '', description: '', occurredOn: today() });
 
 export default function Transactions() {
   const { household } = useAuth();
@@ -22,6 +22,7 @@ export default function Transactions() {
     () => api(`${base}/transactions?limit=100${filter ? `&type=${filter}` : ''}`),
     [household.id, filter],
   );
+  const pockets = useLoad(() => api(`${base}/pockets`), [household.id]);
   const catName = (id) => cats.data?.categories.find((c) => c.id === id)?.name;
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
@@ -38,6 +39,7 @@ export default function Transactions() {
           amount: Number(form.amount),
           occurredOn: form.occurredOn,
           ...(form.categoryId && { categoryId: form.categoryId }),
+          ...(form.type === 'expense' && form.pocketId && { pocketId: form.pocketId }),
           ...(form.description.trim() && { description: form.description.trim() }),
         },
       });
@@ -90,6 +92,17 @@ export default function Transactions() {
             <span className="hint">No categories yet. <Link to="/budgets">Add one under Budgets</Link>.</span>
           )}
         </label>
+        {form.type === 'expense' && (
+          <label>
+            Paid from
+            <select value={form.pocketId} onChange={set('pocketId')}>
+              <option value="">Ready to assign (no pocket)</option>
+              {pockets.data?.pockets.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           Note
           <input maxLength={300} value={form.description} onChange={set('description')} />
@@ -125,6 +138,7 @@ export default function Transactions() {
                   <span className="sub">
                     {shortDate(t.occurredOn)}
                     {catName(t.categoryId) && t.description ? ` · ${catName(t.categoryId)}` : ''}
+                    {t.pocketName ? ` · from ${t.pocketName}` : ''}
                     {t.createdByName ? ` · ${t.createdByName}` : ''}
                   </span>
                 </span>
